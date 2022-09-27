@@ -22,12 +22,15 @@ const tb = @import("tigerbeetle.zig");
 
 const batches_count = 100;
 
-const transfers_per_batch: u32 = @divExact(
+const transfers_per_batch: u32 = @divFloor(
     config.message_size_max - @sizeOf(vsr.Header),
-    @sizeOf(tb.Transfer),
-);
+    @sizeOf(tb.Transfer) * 4,
+) * 4;
 comptime {
     assert(transfers_per_batch >= 2041);
+}
+comptime {
+    assert(transfers_per_batch % 4 == 0);
 }
 
 const transfers_max: u32 = batches_count * transfers_per_batch;
@@ -50,6 +53,78 @@ var accounts = [_]tb.Account{
         .user_data = 0,
         .reserved = [_]u8{0} ** 48,
         .ledger = 2,
+        .code = 0,
+        .flags = .{},
+        .debits_pending = 0,
+        .debits_posted = 0,
+        .credits_pending = 0,
+        .credits_posted = 0,
+    },
+    .{
+        .id = 3,
+        .user_data = 0,
+        .reserved = [_]u8{0} ** 48,
+        .ledger = 12,
+        .code = 0,
+        .flags = .{},
+        .debits_pending = 0,
+        .debits_posted = 0,
+        .credits_pending = 0,
+        .credits_posted = 0,
+    },
+    .{
+        .id = 4,
+        .user_data = 0,
+        .reserved = [_]u8{0} ** 48,
+        .ledger = 12,
+        .code = 0,
+        .flags = .{},
+        .debits_pending = 0,
+        .debits_posted = 0,
+        .credits_pending = 0,
+        .credits_posted = 0,
+    },
+    .{
+        .id = 5,
+        .user_data = 0,
+        .reserved = [_]u8{0} ** 48,
+        .ledger = 22,
+        .code = 0,
+        .flags = .{},
+        .debits_pending = 0,
+        .debits_posted = 0,
+        .credits_pending = 0,
+        .credits_posted = 0,
+    },
+    .{
+        .id = 6,
+        .user_data = 0,
+        .reserved = [_]u8{0} ** 48,
+        .ledger = 22,
+        .code = 0,
+        .flags = .{},
+        .debits_pending = 0,
+        .debits_posted = 0,
+        .credits_pending = 0,
+        .credits_posted = 0,
+    },
+    .{
+        .id = 7,
+        .user_data = 0,
+        .reserved = [_]u8{0} ** 48,
+        .ledger = 32,
+        .code = 0,
+        .flags = .{},
+        .debits_pending = 0,
+        .debits_posted = 0,
+        .credits_pending = 0,
+        .credits_posted = 0,
+    },
+    .{
+        .id = 8,
+        .user_data = 0,
+        .reserved = [_]u8{0} ** 48,
+        .ledger = 32,
         .code = 0,
         .flags = .{},
         .debits_pending = 0,
@@ -100,20 +175,72 @@ pub fn main() !void {
     const transfers = try allocator.alloc(tb.Transfer, transfers_max);
     defer allocator.free(transfers);
 
+    // CoinSwap requires a minimal of 4 transfers chained together
     for (transfers) |*transfer, index| {
-        transfer.* = .{
-            .id = index,
-            .debit_account_id = accounts[0].id,
-            .credit_account_id = accounts[1].id,
-            .pending_id = 0,
-            .user_data = 0,
-            .reserved = 0,
-            .code = 0,
-            .ledger = 2,
-            .flags = .{},
-            .amount = 1,
-            .timeout = 0,
-        };
+        var m = index % 4;
+        if (m == 0) {
+            transfer.* = .{
+                .id = index,
+                .debit_account_id = accounts[0].id,
+                .credit_account_id = accounts[1].id,
+                .pending_id = 0,
+                .user_data = 0,
+                .reserved = 0,
+                .code = 0,
+                .ledger = 2,
+                .flags = .{
+                    .linked = true,
+                },
+                .amount = 1,
+                .timeout = 0,
+            };
+        } else if (m == 1) {
+            transfer.* = .{
+                .id = index,
+                .debit_account_id = accounts[2].id,
+                .credit_account_id = accounts[3].id,
+                .pending_id = 0,
+                .user_data = 0,
+                .reserved = 0,
+                .code = 0,
+                .ledger = 12,
+                .flags = .{
+                    .linked = true,
+                },
+                .amount = 1,
+                .timeout = 0,
+            };
+        } else if (m == 2) {
+            transfer.* = .{
+                .id = index,
+                .debit_account_id = accounts[4].id,
+                .credit_account_id = accounts[5].id,
+                .pending_id = 0,
+                .user_data = 0,
+                .reserved = 0,
+                .code = 0,
+                .ledger = 22,
+                .flags = .{
+                    .linked = true,
+                },
+                .amount = 1,
+                .timeout = 0,
+            };
+        } else {
+            transfer.* = .{
+                .id = index,
+                .debit_account_id = accounts[6].id,
+                .credit_account_id = accounts[7].id,
+                .pending_id = 0,
+                .user_data = 0,
+                .reserved = 0,
+                .code = 0,
+                .ledger = 32,
+                .flags = .{},
+                .amount = 1,
+                .timeout = 0,
+            };
+        }
     }
 
     try wait_for_connect(&client, &io);
@@ -145,9 +272,9 @@ pub fn main() !void {
 
     var ms = queue.end.? - queue.start.?;
 
-    const result: i64 = @divFloor(@intCast(i64, transfers.len * 1000), ms);
+    const result: i64 = @divFloor(@intCast(i64, transfers.len * 1000 / 4), ms);
     try stdout.print("============================================\n", .{});
-    try stdout.print("{} transfers per second\n\n", .{result});
+    try stdout.print("{} swaps per second\n\n", .{result});
     try stdout.print("max p100 latency per {} transfers = {}ms\n", .{
         transfers_per_batch,
         queue.transfers_latency_max,
